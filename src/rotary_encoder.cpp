@@ -31,8 +31,7 @@ RotaryEncoder::RotaryEncoder(uint gpio_pin_left, uint gpio_pin_right):
     transitions()
 {
     if (++num_rotary_encoders > MAX_ROTARY_ENCODERS) [[unlikely]] {
-        printf("Number of rotary encoders (%u) exceeds maximum (%u)!\n", num_rotary_encoders, MAX_ROTARY_ENCODERS);
-        exit(1);
+        panic("Number of rotary encoders (%u) exceeds maximum (%u)!\n", num_rotary_encoders, MAX_ROTARY_ENCODERS);
     }
     gpio_init(gpio_pin_left);
     gpio_init(gpio_pin_right);
@@ -44,7 +43,10 @@ RotaryEncoder::RotaryEncoder(uint gpio_pin_left, uint gpio_pin_right):
 }
 
 bool RotaryEncoder::observe(RotaryEncoderEvent event) {
-    return event_buffer.push(event);
+    if (!event_buffer.push(event)) {
+        panic("Event buffer overflowed!");
+    }
+    return true;
 }
 
 void RotaryEncoder::handle_events() {
@@ -54,8 +56,9 @@ void RotaryEncoder::handle_events() {
             event = event_buffer.pop();
         }
         else [[unlikely]] {
-            event_buffer.reset();
+            printf("r");
             refresh_state();
+            event_buffer.reset();
             break;
         }
     }
@@ -114,8 +117,7 @@ bool RotaryEncoder::handle_event(RotaryEncoderEvent event) {
             }
             break;
         [[unlikely]] case UNKNOWN: 
-            printf("Rotary encoder last known state is uninitialized!\n");
-            exit(1);
+            panic("Rotary encoder last known state is uninitialized!\n");
     }
 
     if (next_state.has_value()) [[likely]] {
@@ -124,10 +126,10 @@ bool RotaryEncoder::handle_event(RotaryEncoderEvent event) {
         transitions.observe(transition.value());
         switch (transition.value()) {
             case ROTATE_LEFT:
-                printf("L");
+                printf("L\n");
                 break;
             case ROTATE_RIGHT:
-                printf("R");
+                printf("R\n");
                 break;
         }
         if (popped.has_value()) {
@@ -161,13 +163,13 @@ void RotaryEncoder::refresh_state() {
 
 bool RotaryEncoder::create_and_register(uint gpio_pin_left, uint gpio_pin_right) {
     if (!ROTARY_ENCODER_STATICS_INITIALIZED) {
-        printf("Attempted to create a Rotary Encoder handler before initializing statics\n");
-        return false;
+        panic("Attempted to create a Rotary Encoder handler before initializing statics\n");
     }
     if (num_rotary_encoders < MAX_ROTARY_ENCODERS) {
         const uint index = num_rotary_encoders;
         ROTARY_ENCODERS[index] = RotaryEncoder(gpio_pin_left, gpio_pin_right);
         PIN_TO_ROTARY_ENCODER_HANDLER_MAP[gpio_pin_left] = index;
+        PIN_TO_ROTARY_ENCODER_HANDLER_MAP[gpio_pin_right] = index;
         return true;
     }
     return false;
@@ -179,6 +181,9 @@ uint RotaryEncoder::get_left_pin() {
 
 uint RotaryEncoder::get_right_pin() {
     return gpio_pin_right;
+}
+uint RotaryEncoder::get_event_len() {
+    return event_buffer.get_len();
 }
 
 uint RotaryEncoder::num_rotary_encoders = 0;
@@ -199,7 +204,7 @@ void init_rotary_encoder_handling() {
 
 void run_rotary_encoder_tasks() {
     for (uint encoder_index = 0; encoder_index < MAX_ROTARY_ENCODERS; ++encoder_index) {
-        std::optional<RotaryEncoder> encoder = ROTARY_ENCODERS[encoder_index];
+        std::optional<RotaryEncoder>& encoder = ROTARY_ENCODERS[encoder_index];
         if (encoder.has_value()) {
             encoder.value().handle_events();
         }
@@ -209,22 +214,43 @@ void run_rotary_encoder_tasks() {
 void handle_raw_rotary_encoder_irq(uint gpio, uint32_t event_mask) {
     std::optional<uint> rotary_encoder_index = PIN_TO_ROTARY_ENCODER_HANDLER_MAP[gpio];
     if (rotary_encoder_index.has_value()) {
-        RotaryEncoder rotary_encoder = ROTARY_ENCODERS[rotary_encoder_index.value()].value();
-        if (event_mask & GPIO_IRQ_EDGE_FALL) {
+        RotaryEncoder& rotary_encoder = ROTARY_ENCODERS[rotary_encoder_index.value()].value();
+        bool edge_fall = event_mask & GPIO_IRQ_EDGE_FALL;
+        bool edge_rise = event_mask & GPIO_IRQ_EDGE_RISE;
+        if (edge_fall && edge_rise) {
+            // do nothing...
+        }
+        else if (edge_fall) {
             if (gpio == rotary_encoder.get_left_pin()) {
                 rotary_encoder.observe(LEFT_EDGE_FALL);
             }
             else if (gpio == rotary_encoder.get_right_pin()) {
                 rotary_encoder.observe(RIGHT_EDGE_FALL);
             }
+            else {
+                panic("gpio pin %u is mapped to rotary encoder %u, but neither of its pins match!", gpio, rotary_encoder_index.value());
+            }
         }
-        if (event_mask & GPIO_IRQ_EDGE_RISE) {
+        else if (edge_rise) {
             if (gpio == rotary_encoder.get_left_pin()) {
                 rotary_encoder.observe(LEFT_EDGE_RISE);
             }
             else if (gpio == rotary_encoder.get_right_pin()) {
                 rotary_encoder.observe(RIGHT_EDGE_RISE);
             }
+            else {
+                panic("gpio pin %u is mapped to rotary encoder %u, but neither of its pins match!", gpio, rotary_encoder_index.value());
+            }
+        }
+    }
+}
+
+void enable_rotary_encoder_irq() {
+    for (uint encoder_index = 0; encoder_index < MAX_ROTARY_ENCODERS; ++encoder_index) {
+        std::optional<RotaryEncoder>& encoder = ROTARY_ENCODERS[encoder_index];
+        if (encoder.has_value()) {
+            gpio_set_irq_enabled(encoder.value().get_left_pin(), GPIO_IRQ_EDGE_FALL | GPIO_IRQ_EDGE_RISE, true);
+            gpio_set_irq_enabled(encoder.value().get_right_pin(), GPIO_IRQ_EDGE_FALL | GPIO_IRQ_EDGE_RISE, true);
         }
     }
 }

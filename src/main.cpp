@@ -23,37 +23,24 @@ int main() {
     stdio_init_all();
     pico_led_init();
 
-    // bool led_on = false;
-    // bool last_a = false;
-    // bool last_b = false;
+    sleep_ms(3000);  // LOAD BEARING!!
+
+    printf("Ready!\n");
     
     init_rotary_encoder_handling();
 
     if (!RotaryEncoder::create_and_register(ROTARY_0_GPIO_0, ROTARY_0_GPIO_1)) {
-        printf("Failed to create Rotary Encoder handler!\n");
-        exit(1);
+        panic("Failed to create Rotary Encoder handler!\n");
     }
 
+    pico_set_led(true);
+
     gpio_set_irq_callback(&gpio_callback);
+    enable_rotary_encoder_irq();
+    irq_set_enabled(IO_IRQ_BANK0, true);
 
     while (true) {
-	    // pico_set_led(led_on);
         run_rotary_encoder_tasks();
-        /*
-        bool read_a = gpio_get(ROTARY_0_GPIO_0);
-        bool read_b = gpio_get(ROTARY_0_GPIO_1);
-        if (read_a != last_a || read_b != last_b) {
-            printf(
-                "A: %s B: %s\n",
-                read_a ? "1" : "0",
-                read_b ? "1" : "0"
-            );
-        }
-        last_a = read_a;
-        last_b = read_b;
-	    // led_on = !led_on;
-	    // sleep_ms(250);
-        */
     }
 
     return 0;

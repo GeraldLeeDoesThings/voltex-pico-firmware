@@ -1,11 +1,10 @@
 #pragma once
-#include <cstdlib>
 #include <optional>
 #include <stdio.h>
 #include "pico/stdlib.h"
 #include "buffer.hpp"
 #include "const.hpp"
-#define ROTARY_ENCODER_EVENT_BUFFER_LEN 64
+#define ROTARY_ENCODER_EVENT_BUFFER_LEN 256
 #define ROTARY_ENCODER_DEBOUNCE_COUNT 3
 #define MAX_ROTARY_ENCODERS 2
 
@@ -60,6 +59,7 @@ public:
     void handle_events();
     uint get_left_pin();
     uint get_right_pin();
+    uint get_event_len();
 };
 
 static RotaryEncoderEvent ROTARY_ENCODER_EVENT_BUFFERS[MAX_ROTARY_ENCODERS][ROTARY_ENCODER_EVENT_BUFFER_LEN];
@@ -71,3 +71,4 @@ static bool ROTARY_ENCODER_STATICS_INITIALIZED = false;
 void init_rotary_encoder_handling();
 void run_rotary_encoder_tasks();
 void handle_raw_rotary_encoder_irq(uint gpio, uint32_t event_mask);
+void enable_rotary_encoder_irq();

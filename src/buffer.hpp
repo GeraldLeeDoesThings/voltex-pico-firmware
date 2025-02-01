@@ -6,10 +6,10 @@ template <typename T>
 class CircularBufferFIFOQueue {
 private:
     T* data;
-    uint len;
+    volatile uint len;
     uint size;
-    uint write_index;
-    uint read_index;
+    volatile uint write_index;
+    volatile uint read_index;
 public:
     CircularBufferFIFOQueue(T* data, uint size):
         data(data),
@@ -43,6 +43,10 @@ public:
         read_index = write_index;
         len = 0;
     }
+
+    uint get_len() {
+        return len;
+    }
 };
 
 template <typename T> 
@@ -50,7 +54,7 @@ class CircularOverflowBuffer {
 private:
     std::optional<T>* data;
     uint size;
-    uint head;
+    volatile uint head;
 public:
     CircularOverflowBuffer(std::optional<T>* data, uint size):
         data(data),
