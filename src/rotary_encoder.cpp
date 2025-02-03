@@ -128,20 +128,18 @@ bool RotaryEncoder::handle_event(RotaryEncoderEvent event) {
         last_state = next_state.value();
         std::optional<RotaryEncoderTransition> popped = transition_buffer.push(transition.value());
         transitions.observe(transition.value());
-        switch (transition.value()) {
-            case ROTATE_LEFT:
-                if (diff > MIN_US_DIFF_TO_SEND) {
-                    printf("L\n");
-                }
-                break;
-            case ROTATE_RIGHT:
-                if (diff > MIN_US_DIFF_TO_SEND) {
-                    printf("R\n");
-                }
-                break;
-        }
         if (popped.has_value()) {
             transitions.unobserve(popped.value());
+        }
+        if (diff > MIN_US_DIFF_TO_SEND && transitions.count(transition.value()) >= ROTARY_ENCODER_CONSENSUS_COUNT) {
+            switch (transition.value()) {
+                case ROTATE_LEFT:
+                    printf("L\n");
+                    break;
+                case ROTATE_RIGHT:
+                    printf("R\n");
+                    break;
+            }
         }
         return true;
     }

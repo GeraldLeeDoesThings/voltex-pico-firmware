@@ -26,3 +26,7 @@ pico_enable_stdio_uart(main 0)
 
 # create map/bin/hex/uf2 file in addition to ELF.
 pico_add_extra_outputs(main)
+
+add_compile_options(
+    -Wall -Werror -Wno-error=maybe-uninitialized -O3
+)
