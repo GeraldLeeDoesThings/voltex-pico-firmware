@@ -7,6 +7,7 @@
 #define ROTARY_ENCODER_EVENT_BUFFER_LEN 256
 #define ROTARY_ENCODER_DEBOUNCE_COUNT 3
 #define MAX_ROTARY_ENCODERS 2
+#define MIN_US_DIFF_TO_SEND 8000
 
 enum RotaryEncoderState {
     BOTH_DOWN,
@@ -31,7 +32,7 @@ enum RotaryEncoderTransition {
 class RotaryTransitionCounter {
     friend class RotaryEncoder;
 private:
-    uint counts[3];
+    uint counts[2];
     RotaryTransitionCounter();
     void observe(RotaryEncoderTransition transition);
     bool unobserve(RotaryEncoderTransition transition);
@@ -47,6 +48,7 @@ private:
     CircularOverflowBuffer<RotaryEncoderTransition> transition_buffer;
     RotaryEncoderState last_state;
     RotaryTransitionCounter transitions;
+    uint64_t last_state_update;
 
     RotaryEncoder(uint gpio_pin_left, uint gpio_pin_right);
     bool handle_event(RotaryEncoderEvent event);

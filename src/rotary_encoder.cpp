@@ -1,7 +1,7 @@
 #include "rotary_encoder.hpp"
 
 RotaryTransitionCounter::RotaryTransitionCounter():
-    counts {0, 0, 0}
+    counts {0, 0}
 { }
 
 void RotaryTransitionCounter::observe(RotaryEncoderTransition transition) {
@@ -28,7 +28,8 @@ RotaryEncoder::RotaryEncoder(uint gpio_pin_left, uint gpio_pin_right):
     event_buffer(ROTARY_ENCODER_EVENT_BUFFERS[num_rotary_encoders], ROTARY_ENCODER_EVENT_BUFFER_LEN),
     transition_buffer(ROTARY_ENCODER_TRANSITION_BUFFERS[num_rotary_encoders], ROTARY_ENCODER_DEBOUNCE_COUNT),
     last_state(UNKNOWN),
-    transitions()
+    transitions(),
+    last_state_update(0)
 {
     if (++num_rotary_encoders > MAX_ROTARY_ENCODERS) [[unlikely]] {
         panic("Number of rotary encoders (%u) exceeds maximum (%u)!\n", num_rotary_encoders, MAX_ROTARY_ENCODERS);
@@ -121,15 +122,22 @@ bool RotaryEncoder::handle_event(RotaryEncoderEvent event) {
     }
 
     if (next_state.has_value()) [[likely]] {
+        uint64_t now = time_us_64();
+        uint64_t diff = now - last_state_update;
+        last_state_update = now;
         last_state = next_state.value();
         std::optional<RotaryEncoderTransition> popped = transition_buffer.push(transition.value());
         transitions.observe(transition.value());
         switch (transition.value()) {
             case ROTATE_LEFT:
-                printf("L\n");
+                if (diff > MIN_US_DIFF_TO_SEND) {
+                    printf("L\n");
+                }
                 break;
             case ROTATE_RIGHT:
-                printf("R\n");
+                if (diff > MIN_US_DIFF_TO_SEND) {
+                    printf("R\n");
+                }
                 break;
         }
         if (popped.has_value()) {
