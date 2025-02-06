@@ -29,7 +29,8 @@ RotaryEncoder::RotaryEncoder(uint gpio_pin_left, uint gpio_pin_right):
     transition_buffer(ROTARY_ENCODER_TRANSITION_BUFFERS[num_rotary_encoders], ROTARY_ENCODER_DEBOUNCE_COUNT),
     last_state(UNKNOWN),
     transitions(),
-    last_state_update(0)
+    last_state_update(0),
+    last_read_ok(true)
 {
     if (++num_rotary_encoders > MAX_ROTARY_ENCODERS) [[unlikely]] {
         panic("Number of rotary encoders (%u) exceeds maximum (%u)!\n", num_rotary_encoders, MAX_ROTARY_ENCODERS);
@@ -58,6 +59,7 @@ void RotaryEncoder::handle_events() {
         }
         else [[unlikely]] {
             printf("r");
+            last_read_ok = false;
             refresh_state();
             event_buffer.reset();
             break;
@@ -126,18 +128,35 @@ bool RotaryEncoder::handle_event(RotaryEncoderEvent event) {
         uint64_t diff = now - last_state_update;
         last_state_update = now;
         last_state = next_state.value();
+        if (diff < MIN_US_DIFF_TO_SEND) {
+            return true;  // Input is too fast don't consider sending it
+        }
+        if (!last_read_ok) {
+            last_read_ok = true;
+            return true;  // Last read was an error
+        }
         std::optional<RotaryEncoderTransition> popped = transition_buffer.push(transition.value());
         transitions.observe(transition.value());
         if (popped.has_value()) {
             transitions.unobserve(popped.value());
-        }
-        if (diff > MIN_US_DIFF_TO_SEND && transitions.count(transition.value()) >= ROTARY_ENCODER_CONSENSUS_COUNT) {
-            switch (transition.value()) {
+            /*
+            switch (popped.value()) {
                 case ROTATE_LEFT:
-                    printf("L\n");
+                    printf("pL %u\n", transitions.count(ROTATE_LEFT));
                     break;
                 case ROTATE_RIGHT:
-                    printf("R\n");
+                    printf("pR %u\n", transitions.count(ROTATE_RIGHT));
+                    break;
+            }
+            */
+        }
+        if (transitions.count(transition.value()) > ROTARY_ENCODER_CONSENSUS_COUNT) {
+            switch (transition.value()) {
+                case ROTATE_LEFT:
+                    printf("L %u %u %llu\n", transitions.count(ROTATE_LEFT), transitions.count(ROTATE_RIGHT), diff);
+                    break;
+                case ROTATE_RIGHT:
+                    printf("R %u %u %llu\n", transitions.count(ROTATE_LEFT), transitions.count(ROTATE_RIGHT), diff);
                     break;
             }
         }

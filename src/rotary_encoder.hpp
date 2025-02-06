@@ -50,6 +50,7 @@ private:
     RotaryEncoderState last_state;
     RotaryTransitionCounter transitions;
     uint64_t last_state_update;
+    bool last_read_ok;
 
     RotaryEncoder(uint gpio_pin_left, uint gpio_pin_right);
     bool handle_event(RotaryEncoderEvent event);
