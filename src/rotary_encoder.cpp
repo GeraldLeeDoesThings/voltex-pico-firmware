@@ -25,7 +25,6 @@ uint RotaryTransitionCounter::count(RotaryEncoderTransition transition) {
 RotaryEncoder::RotaryEncoder(uint gpio_pin_left, uint gpio_pin_right):
     gpio_pin_left(gpio_pin_left),
     gpio_pin_right(gpio_pin_right),
-    event_buffer(ROTARY_ENCODER_EVENT_BUFFERS[num_rotary_encoders], ROTARY_ENCODER_EVENT_BUFFER_LEN),
     transition_buffer(ROTARY_ENCODER_TRANSITION_BUFFERS[num_rotary_encoders], ROTARY_ENCODER_DEBOUNCE_COUNT),
     last_state(UNKNOWN),
     transitions(),
@@ -44,35 +43,12 @@ RotaryEncoder::RotaryEncoder(uint gpio_pin_left, uint gpio_pin_right):
     refresh_state();
 }
 
-bool RotaryEncoder::observe(RotaryEncoderEvent event) {
-    if (!event_buffer.push(event)) {
-        panic("Event buffer overflowed!");
-    }
-    return true;
-}
-
-void RotaryEncoder::handle_events() {
-    std::optional<RotaryEncoderEvent> event = event_buffer.pop();
-    while (event.has_value()) {
-        if (handle_event(event.value())) [[likely]] {
-            event = event_buffer.pop();
-        }
-        else [[unlikely]] {
-            printf("r");
-            last_read_ok = false;
-            refresh_state();
-            event_buffer.reset();
-            break;
-        }
-    }
-}
-
-bool RotaryEncoder::handle_event(RotaryEncoderEvent event) {
+bool RotaryEncoder::handle_event(const TimedRotaryEncoderEvent &event) {
     std::optional<RotaryEncoderState> next_state = std::nullopt;
     std::optional<RotaryEncoderTransition> transition = std::nullopt;
     switch (last_state) {
         case BOTH_DOWN:
-            switch (event) {
+            switch (event.event) {
                 case LEFT_EDGE_RISE:
                     next_state.emplace(LEFT_UP);
                     transition.emplace(ROTATE_LEFT);
@@ -84,7 +60,7 @@ bool RotaryEncoder::handle_event(RotaryEncoderEvent event) {
             }
             break;
         case LEFT_UP:
-            switch (event) {
+            switch (event.event) {
                 case LEFT_EDGE_FALL:
                     next_state.emplace(BOTH_DOWN);
                     transition.emplace(ROTATE_RIGHT);
@@ -96,7 +72,7 @@ bool RotaryEncoder::handle_event(RotaryEncoderEvent event) {
             }
             break;
         case RIGHT_UP:
-            switch (event) {
+            switch (event.event) {
                 case LEFT_EDGE_RISE:
                     next_state.emplace(BOTH_UP);
                     transition.emplace(ROTATE_RIGHT);
@@ -108,7 +84,7 @@ bool RotaryEncoder::handle_event(RotaryEncoderEvent event) {
             }
             break;
         case BOTH_UP:
-            switch (event) {
+            switch (event.event) {
                 case LEFT_EDGE_FALL:
                     next_state.emplace(RIGHT_UP);
                     transition.emplace(ROTATE_LEFT);
@@ -124,7 +100,7 @@ bool RotaryEncoder::handle_event(RotaryEncoderEvent event) {
     }
 
     if (next_state.has_value()) [[likely]] {
-        uint64_t now = time_us_64();
+        uint64_t now = event.time;
         uint64_t diff = now - last_state_update;
         last_state_update = now;
         last_state = next_state.value();
@@ -153,10 +129,10 @@ bool RotaryEncoder::handle_event(RotaryEncoderEvent event) {
         if (transitions.count(transition.value()) > ROTARY_ENCODER_CONSENSUS_COUNT) {
             switch (transition.value()) {
                 case ROTATE_LEFT:
-                    printf("L %u %u %llu\n", transitions.count(ROTATE_LEFT), transitions.count(ROTATE_RIGHT), diff);
+                    printf("L\n");
                     break;
                 case ROTATE_RIGHT:
-                    printf("R %u %u %llu\n", transitions.count(ROTATE_LEFT), transitions.count(ROTATE_RIGHT), diff);
+                    printf("R\n");
                     break;
             }
         }
@@ -207,9 +183,6 @@ uint RotaryEncoder::get_left_pin() {
 uint RotaryEncoder::get_right_pin() {
     return gpio_pin_right;
 }
-uint RotaryEncoder::get_event_len() {
-    return event_buffer.get_len();
-}
 
 uint RotaryEncoder::num_rotary_encoders = 0;
 
@@ -227,16 +200,10 @@ void init_rotary_encoder_handling() {
     ROTARY_ENCODER_STATICS_INITIALIZED = true;
 }
 
-void run_rotary_encoder_tasks() {
-    for (uint encoder_index = 0; encoder_index < MAX_ROTARY_ENCODERS; ++encoder_index) {
-        std::optional<RotaryEncoder>& encoder = ROTARY_ENCODERS[encoder_index];
-        if (encoder.has_value()) {
-            encoder.value().handle_events();
-        }
-    }
-}
-
-void handle_raw_rotary_encoder_irq(uint gpio, uint32_t event_mask) {
+void handle_rotary_encoder_event(const Event &event) {
+    uint gpio = event.gpio;
+    uint32_t event_mask = event.mask;
+    uint64_t at = event.time;
     std::optional<uint> rotary_encoder_index = PIN_TO_ROTARY_ENCODER_HANDLER_MAP[gpio];
     if (rotary_encoder_index.has_value()) {
         RotaryEncoder& rotary_encoder = ROTARY_ENCODERS[rotary_encoder_index.value()].value();
@@ -247,10 +214,10 @@ void handle_raw_rotary_encoder_irq(uint gpio, uint32_t event_mask) {
         }
         else if (edge_fall) {
             if (gpio == rotary_encoder.get_left_pin()) {
-                rotary_encoder.observe(LEFT_EDGE_FALL);
+                rotary_encoder.handle_event(TimedRotaryEncoderEvent { LEFT_EDGE_FALL, at });
             }
             else if (gpio == rotary_encoder.get_right_pin()) {
-                rotary_encoder.observe(RIGHT_EDGE_FALL);
+                rotary_encoder.handle_event(TimedRotaryEncoderEvent { RIGHT_EDGE_FALL, at });
             }
             else {
                 panic("gpio pin %u is mapped to rotary encoder %u, but neither of its pins match!", gpio, rotary_encoder_index.value());
@@ -258,10 +225,10 @@ void handle_raw_rotary_encoder_irq(uint gpio, uint32_t event_mask) {
         }
         else if (edge_rise) {
             if (gpio == rotary_encoder.get_left_pin()) {
-                rotary_encoder.observe(LEFT_EDGE_RISE);
+                rotary_encoder.handle_event(TimedRotaryEncoderEvent { LEFT_EDGE_RISE, at });
             }
             else if (gpio == rotary_encoder.get_right_pin()) {
-                rotary_encoder.observe(RIGHT_EDGE_RISE);
+                rotary_encoder.handle_event(TimedRotaryEncoderEvent { RIGHT_EDGE_RISE, at });
             }
             else {
                 panic("gpio pin %u is mapped to rotary encoder %u, but neither of its pins match!", gpio, rotary_encoder_index.value());

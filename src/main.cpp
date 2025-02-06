@@ -1,5 +1,7 @@
+#include <optional>
 #include <stdio.h>
 #include "pico/stdlib.h"
+#include "event.hpp"
 #include "rotary_encoder.hpp"
 
 #define ROTARY_0_GPIO_0 0
@@ -15,7 +17,7 @@ void pico_set_led(bool on) {
 }
 
 void gpio_callback(uint gpio, uint32_t event_mask) {
-    handle_raw_rotary_encoder_irq(gpio, event_mask);
+    record_event(gpio, event_mask);
     // irq is automatically acknowledged
 }
 
@@ -40,7 +42,13 @@ int main() {
     irq_set_enabled(IO_IRQ_BANK0, true);
 
     while (true) {
-        run_rotary_encoder_tasks();
+
+        std::optional<Event> maybe_event = pop_event();
+        while (maybe_event.has_value()) {
+            handle_rotary_encoder_event(maybe_event.value());
+            maybe_event = pop_event();
+        }
+        // run_rotary_encoder_tasks();
     }
 
     return 0;

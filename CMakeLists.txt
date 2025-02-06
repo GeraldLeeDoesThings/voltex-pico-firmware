@@ -15,6 +15,7 @@ include_directories(src)
 
 add_executable(main
     src/main.cpp
+    src/event.cpp
     src/rotary_encoder.cpp
 )
 
