@@ -115,16 +115,6 @@ bool RotaryEncoder::handle_event(const TimedRotaryEncoderEvent &event) {
         transitions.observe(transition.value());
         if (popped.has_value()) {
             transitions.unobserve(popped.value());
-            /*
-            switch (popped.value()) {
-                case ROTATE_LEFT:
-                    printf("pL %u\n", transitions.count(ROTATE_LEFT));
-                    break;
-                case ROTATE_RIGHT:
-                    printf("pR %u\n", transitions.count(ROTATE_RIGHT));
-                    break;
-            }
-            */
         }
         if (transitions.count(transition.value()) > ROTARY_ENCODER_CONSENSUS_COUNT) {
             switch (transition.value()) {
@@ -139,6 +129,7 @@ bool RotaryEncoder::handle_event(const TimedRotaryEncoderEvent &event) {
         return true;
     }
     else [[unlikely]] {
+        last_read_ok = false;
         return false;
     }
 }
@@ -167,6 +158,12 @@ bool RotaryEncoder::create_and_register(uint gpio_pin_left, uint gpio_pin_right)
         panic("Attempted to create a Rotary Encoder handler before initializing statics\n");
     }
     if (num_rotary_encoders < MAX_ROTARY_ENCODERS) {
+        if (PIN_TO_ROTARY_ENCODER_HANDLER_MAP[gpio_pin_left].has_value()) {
+            return false;
+        }
+        if (PIN_TO_ROTARY_ENCODER_HANDLER_MAP[gpio_pin_right].has_value()) {
+            return false;
+        }
         const uint index = num_rotary_encoders;
         ROTARY_ENCODERS[index] = RotaryEncoder(gpio_pin_left, gpio_pin_right);
         PIN_TO_ROTARY_ENCODER_HANDLER_MAP[gpio_pin_left] = index;
