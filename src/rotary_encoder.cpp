@@ -38,24 +38,30 @@ RotaryEncoder::RotaryEncoder(uint gpio_pin_left, uint gpio_pin_right):
     gpio_init(gpio_pin_right);
     gpio_set_dir(gpio_pin_left, GPIO_IN);
     gpio_set_dir(gpio_pin_right, GPIO_IN);
-    gpio_pull_up(gpio_pin_left);
-    gpio_pull_up(gpio_pin_right);
+    // gpio_pull_up(gpio_pin_left);
+    // gpio_pull_up(gpio_pin_right);
+    // gpio_set_slew_rate(gpio_pin_left, GPIO_SLEW_RATE_SLOW);
+    // gpio_set_slew_rate(gpio_pin_right, GPIO_SLEW_RATE_SLOW);
     refresh_state();
 }
 
 bool RotaryEncoder::handle_event(const TimedRotaryEncoderEvent &event) {
     std::optional<RotaryEncoderState> next_state = std::nullopt;
     std::optional<RotaryEncoderTransition> transition = std::nullopt;
+    uint64_t now = event.time;
+    uint64_t diff = now - last_state_update;
+    bool fast = diff < MIN_US_DIFF_TO_SEND;
+    bool very_fast = diff < MIN_US_DIFF_TO_SEND / 100;
     switch (last_state) {
         case BOTH_DOWN:
             switch (event.event) {
                 case LEFT_EDGE_RISE:
                     next_state.emplace(LEFT_UP);
-                    transition.emplace(ROTATE_LEFT);
+                    // Ambiguous
                     break;
                 case RIGHT_EDGE_RISE:
                     next_state.emplace(RIGHT_UP);
-                    transition.emplace(ROTATE_RIGHT);
+                    transition.emplace(ROTATE_LEFT);
                     break;
             }
             break;
@@ -63,11 +69,11 @@ bool RotaryEncoder::handle_event(const TimedRotaryEncoderEvent &event) {
             switch (event.event) {
                 case LEFT_EDGE_FALL:
                     next_state.emplace(BOTH_DOWN);
-                    transition.emplace(ROTATE_RIGHT);
+                    transition.emplace((very_fast) ? ROTATE_RIGHT : ROTATE_LEFT);
                     break;
                 case RIGHT_EDGE_RISE:
                     next_state.emplace(BOTH_UP);
-                    transition.emplace(ROTATE_LEFT);
+                    transition.emplace((very_fast) ? ROTATE_LEFT : ROTATE_RIGHT);
                     break;
             }
             break;
@@ -75,11 +81,11 @@ bool RotaryEncoder::handle_event(const TimedRotaryEncoderEvent &event) {
             switch (event.event) {
                 case LEFT_EDGE_RISE:
                     next_state.emplace(BOTH_UP);
-                    transition.emplace(ROTATE_RIGHT);
+                    transition.emplace(ROTATE_LEFT);
                     break;
                 case RIGHT_EDGE_FALL:
                     next_state.emplace(BOTH_DOWN);
-                    transition.emplace(ROTATE_LEFT);
+                    transition.emplace(ROTATE_RIGHT);
                     break;
             }
             break;
@@ -87,11 +93,11 @@ bool RotaryEncoder::handle_event(const TimedRotaryEncoderEvent &event) {
             switch (event.event) {
                 case LEFT_EDGE_FALL:
                     next_state.emplace(RIGHT_UP);
-                    transition.emplace(ROTATE_LEFT);
+                    transition.emplace(ROTATE_RIGHT);
                     break;
                 case RIGHT_EDGE_FALL:
                     next_state.emplace(LEFT_UP);
-                    transition.emplace(ROTATE_RIGHT);
+                    // Ambiguous
                     break;
             }
             break;
@@ -100,36 +106,43 @@ bool RotaryEncoder::handle_event(const TimedRotaryEncoderEvent &event) {
     }
 
     if (next_state.has_value()) [[likely]] {
-        uint64_t now = event.time;
-        uint64_t diff = now - last_state_update;
         last_state_update = now;
         last_state = next_state.value();
-        if (diff < MIN_US_DIFF_TO_SEND) {
-            return true;  // Input is too fast don't consider sending it
-        }
         if (!last_read_ok) {
             last_read_ok = true;
             return true;  // Last read was an error
         }
-        std::optional<RotaryEncoderTransition> popped = transition_buffer.push(transition.value());
-        transitions.observe(transition.value());
-        if (popped.has_value()) {
-            transitions.unobserve(popped.value());
+        if (fast) {
+            return true;  // Too fast to send
         }
-        if (transitions.count(transition.value()) > ROTARY_ENCODER_CONSENSUS_COUNT) {
-            switch (transition.value()) {
-                case ROTATE_LEFT:
-                    printf("L\n");
-                    break;
-                case ROTATE_RIGHT:
-                    printf("R\n");
-                    break;
+        if (transition.has_value()) {
+            std::optional<RotaryEncoderTransition> popped = transition_buffer.push(transition.value());
+            transitions.observe(transition.value());
+            if (popped.has_value()) {
+                transitions.unobserve(popped.value());
+            }
+            if (transitions.count(transition.value()) >= ROTARY_ENCODER_CONSENSUS_COUNT) {
+                switch (transition.value()) {
+                    case ROTATE_LEFT:
+                        #ifdef DEBUG_MODE
+                        printf("L\n");
+                        #endif
+                        break;
+                    case ROTATE_RIGHT:
+                        #ifdef DEBUG_MODE
+                        printf("R\n");
+                        #endif
+                        break;
+                }
             }
         }
         return true;
     }
     else [[unlikely]] {
         last_read_ok = false;
+        #ifdef DEBUG_MODE
+        printf("r");
+        #endif
         return false;
     }
 }
