@@ -1,32 +1,30 @@
 #pragma once
 #include <optional>
+#include <stdio.h>
 #include "pico/stdlib.h"
+#include "buffer.hpp"
 #include "report.hpp"
 
-#define JOYSTICK_SENSITIVITY 25
-#define JOYSTICK_TIMEOUT_US 8000
+#define JOYSTICK_SENSITIVITY 1
 #define MAX_JOYSTICKS 2
 
 class Joystick {
 private:
-    alarm_pool_t* alarm_pool;
-    std::optional<alarm_id_t> alarm;
+    static uint num_joysticks;
     uint8_t z;
     uint8_t rotation_x;
     uint8_t rotation_y;
     uint8_t rotation_z;
-    uint64_t last_update_time;
+    bool changed;
 
-    Joystick(alarm_pool_t* alarm_pool);
-    void cancel_alarm();
-    void set_alarm();
+    Joystick();
 
 public:
+    static std::optional<Joystick*> create_and_register();
     void handle_encoder_left_rotation();
     void handle_encoder_right_rotation();
-    void reset_position();
     void apply_to_report(report &report);
+    bool has_changes();
 };
 
-int64_t joystick_alarm_callback(alarm_id_t id, void *user_data);
-
+static std::optional<Joystick> JOYSTICKS[MAX_JOYSTICKS];

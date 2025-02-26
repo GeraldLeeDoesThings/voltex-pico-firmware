@@ -39,6 +39,13 @@ public:
         return std::optional<T>{val};
     }
 
+    std::optional<T> peek() {
+        if (len == 0) {
+            return std::nullopt;
+        }
+        return std::optional<T>{data[read_index]};
+    }
+
     void reset() {
         read_index = write_index;
         len = 0;

@@ -5,6 +5,7 @@
 #include "buffer.hpp"
 #include "const.hpp"
 #include "event.hpp"
+#include "joystick.hpp"
 #define ROTARY_ENCODER_EVENT_BUFFER_LEN 256
 #define ROTARY_ENCODER_DEBOUNCE_COUNT 2
 #define ROTARY_ENCODER_CONSENSUS_COUNT 2
@@ -56,13 +57,14 @@ private:
     RotaryTransitionCounter transitions;
     uint64_t last_state_update;
     bool last_read_ok;
+    Joystick* joystick;
 
-    RotaryEncoder(uint gpio_pin_left, uint gpio_pin_right);
+    RotaryEncoder(uint gpio_pin_left, uint gpio_pin_right, Joystick* joystick);
     void refresh_state();
 
 public:
     
-    static bool create_and_register(uint gpio_pin_left, uint gpio_pin_right);
+    static bool create_and_register(uint gpio_pin_left, uint gpio_pin_right, Joystick* joystick);
     bool handle_event(const TimedRotaryEncoderEvent &event);
     uint get_left_pin();
     uint get_right_pin();

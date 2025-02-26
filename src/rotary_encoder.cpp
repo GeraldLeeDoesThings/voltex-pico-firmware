@@ -22,14 +22,15 @@ uint RotaryTransitionCounter::count(RotaryEncoderTransition transition) {
     return counts[transition];
 }
 
-RotaryEncoder::RotaryEncoder(uint gpio_pin_left, uint gpio_pin_right):
+RotaryEncoder::RotaryEncoder(uint gpio_pin_left, uint gpio_pin_right, Joystick* joystick):
     gpio_pin_left(gpio_pin_left),
     gpio_pin_right(gpio_pin_right),
     transition_buffer(ROTARY_ENCODER_TRANSITION_BUFFERS[num_rotary_encoders], ROTARY_ENCODER_DEBOUNCE_COUNT),
     last_state(UNKNOWN),
     transitions(),
     last_state_update(0),
-    last_read_ok(true)
+    last_read_ok(true),
+    joystick(joystick)
 {
     if (++num_rotary_encoders > MAX_ROTARY_ENCODERS) [[unlikely]] {
         panic("Number of rotary encoders (%u) exceeds maximum (%u)!\n", num_rotary_encoders, MAX_ROTARY_ENCODERS);
@@ -38,10 +39,6 @@ RotaryEncoder::RotaryEncoder(uint gpio_pin_left, uint gpio_pin_right):
     gpio_init(gpio_pin_right);
     gpio_set_dir(gpio_pin_left, GPIO_IN);
     gpio_set_dir(gpio_pin_right, GPIO_IN);
-    // gpio_pull_up(gpio_pin_left);
-    // gpio_pull_up(gpio_pin_right);
-    // gpio_set_slew_rate(gpio_pin_left, GPIO_SLEW_RATE_SLOW);
-    // gpio_set_slew_rate(gpio_pin_right, GPIO_SLEW_RATE_SLOW);
     refresh_state();
 }
 
@@ -51,17 +48,16 @@ bool RotaryEncoder::handle_event(const TimedRotaryEncoderEvent &event) {
     uint64_t now = event.time;
     uint64_t diff = now - last_state_update;
     bool fast = diff < MIN_US_DIFF_TO_SEND;
-    bool very_fast = diff < MIN_US_DIFF_TO_SEND / 100;
     switch (last_state) {
         case BOTH_DOWN:
             switch (event.event) {
                 case LEFT_EDGE_RISE:
                     next_state.emplace(LEFT_UP);
-                    // Ambiguous
+                    transition.emplace(ROTATE_LEFT);
                     break;
                 case RIGHT_EDGE_RISE:
                     next_state.emplace(RIGHT_UP);
-                    transition.emplace(ROTATE_LEFT);
+                    transition.emplace(ROTATE_RIGHT);
                     break;
             }
             break;
@@ -69,11 +65,11 @@ bool RotaryEncoder::handle_event(const TimedRotaryEncoderEvent &event) {
             switch (event.event) {
                 case LEFT_EDGE_FALL:
                     next_state.emplace(BOTH_DOWN);
-                    transition.emplace((very_fast) ? ROTATE_RIGHT : ROTATE_LEFT);
+                    transition.emplace(ROTATE_RIGHT);
                     break;
                 case RIGHT_EDGE_RISE:
                     next_state.emplace(BOTH_UP);
-                    transition.emplace((very_fast) ? ROTATE_LEFT : ROTATE_RIGHT);
+                    transition.emplace(ROTATE_LEFT);
                     break;
             }
             break;
@@ -81,11 +77,11 @@ bool RotaryEncoder::handle_event(const TimedRotaryEncoderEvent &event) {
             switch (event.event) {
                 case LEFT_EDGE_RISE:
                     next_state.emplace(BOTH_UP);
-                    transition.emplace(ROTATE_LEFT);
+                    transition.emplace(ROTATE_RIGHT);
                     break;
                 case RIGHT_EDGE_FALL:
                     next_state.emplace(BOTH_DOWN);
-                    transition.emplace(ROTATE_RIGHT);
+                    transition.emplace(ROTATE_LEFT);
                     break;
             }
             break;
@@ -93,11 +89,11 @@ bool RotaryEncoder::handle_event(const TimedRotaryEncoderEvent &event) {
             switch (event.event) {
                 case LEFT_EDGE_FALL:
                     next_state.emplace(RIGHT_UP);
-                    transition.emplace(ROTATE_RIGHT);
+                    transition.emplace(ROTATE_LEFT);
                     break;
                 case RIGHT_EDGE_FALL:
                     next_state.emplace(LEFT_UP);
-                    // Ambiguous
+                    transition.emplace(ROTATE_RIGHT);
                     break;
             }
             break;
@@ -127,11 +123,13 @@ bool RotaryEncoder::handle_event(const TimedRotaryEncoderEvent &event) {
                         #ifdef DEBUG_MODE
                         printf("L\n");
                         #endif
+                        joystick->handle_encoder_left_rotation();
                         break;
                     case ROTATE_RIGHT:
                         #ifdef DEBUG_MODE
                         printf("R\n");
                         #endif
+                        joystick->handle_encoder_right_rotation();
                         break;
                 }
             }
@@ -166,7 +164,7 @@ void RotaryEncoder::refresh_state() {
     }
 }
 
-bool RotaryEncoder::create_and_register(uint gpio_pin_left, uint gpio_pin_right) {
+bool RotaryEncoder::create_and_register(uint gpio_pin_left, uint gpio_pin_right, Joystick* joystick) {
     if (!ROTARY_ENCODER_STATICS_INITIALIZED) {
         panic("Attempted to create a Rotary Encoder handler before initializing statics\n");
     }
@@ -178,7 +176,7 @@ bool RotaryEncoder::create_and_register(uint gpio_pin_left, uint gpio_pin_right)
             return false;
         }
         const uint index = num_rotary_encoders;
-        ROTARY_ENCODERS[index] = RotaryEncoder(gpio_pin_left, gpio_pin_right);
+        ROTARY_ENCODERS[index] = RotaryEncoder(gpio_pin_left, gpio_pin_right, joystick);
         PIN_TO_ROTARY_ENCODER_HANDLER_MAP[gpio_pin_left] = index;
         PIN_TO_ROTARY_ENCODER_HANDLER_MAP[gpio_pin_right] = index;
         return true;

@@ -50,6 +50,7 @@ int main() {
     #endif
 
     stdio_init_all();
+
     // pico_led_init();
 
     sleep_ms(3000);  // LOAD BEARING!!
@@ -59,7 +60,9 @@ int main() {
     init_rotary_encoder_handling();
     init_button_handling();
 
-    if (!RotaryEncoder::create_and_register(ROTARY_0_GPIO_0, ROTARY_0_GPIO_1)) {
+    Joystick* stick = Joystick::create_and_register().value();
+
+    if (!RotaryEncoder::create_and_register(ROTARY_0_GPIO_0, ROTARY_0_GPIO_1, stick)) {
         panic("Failed to create Rotary Encoder handler!\n");
     }
 
@@ -74,6 +77,8 @@ int main() {
     enable_button_irq();
     irq_set_enabled(IO_IRQ_BANK0, true);
 
+    report r = report { 0, 0, 0, 0, 0 };
+
     while (true) {
 
         std::optional<Event> maybe_event = pop_event();
@@ -83,7 +88,18 @@ int main() {
             maybe_event = pop_event();
         }
         #ifndef DEBUG_MODE
+        if (stick->has_changes()) {
+            stick->apply_to_report(r);
+            if (tud_hid_ready()) {
+                tud_hid_n_report(0x00, 0x01, &r, sizeof(r));
+            }
+        }
         tud_task(); // tinyusb task
+        #else
+        if (stick->has_changes()) {
+            stick->apply_to_report(r);
+            printf("%d\n", r.joystick_rotation_x);
+        }
         #endif
     }
 
